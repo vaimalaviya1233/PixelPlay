@@ -3,6 +3,9 @@ name: Build Phone APK (Release)
 on:
   push:
     branches: [ master ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [ master ]
   workflow_dispatch:
 
 permissions:
@@ -49,7 +52,7 @@ jobs:
           echo "keyPassword=994273" >> keystore.properties
 
       - name: Build Phone release APK
-        run: ./gradlew :app:assembleRelease -Ppixelplay.enableAbiSplits=true
+        run: gradle :app:assembleRelease -Ppixelplay.enableAbiSplits=true
 
       - name: Verify Phone split APKs
         run: |
