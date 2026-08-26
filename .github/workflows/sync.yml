@@ -1,0 +1,77 @@
+name: Force Sync All Branches from Upstream (Preserve Workflows)
+
+on:
+  schedule:
+    - cron: "0 */12 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream "${{ secrets.UPSTREAM_REPO }}"
+          git fetch upstream
+      
+      - name: Force overwrite all branches except workflows
+        run: |
+          for fullref in $(git for-each-ref --format='%(refname:short)' refs/remotes/upstream); do
+            branch=${fullref#upstream/}
+
+            # Skip HEAD and literal upstream branch
+            if [[ "$branch" == "HEAD" || "$branch" == "upstream" ]]; then
+              echo "Skipping pseudo-branch: $branch"
+              continue
+            fi
+
+            echo "=== Force syncing branch: $branch ==="
+
+            # Clean working directory
+            git reset --hard
+            git clean -fd
+
+            # Checkout or create branch
+            if git show-ref --verify --quiet refs/remotes/origin/$branch; then
+              git checkout -B "$branch" "origin/$branch"
+            else
+              git checkout -B "$branch"
+            fi
+
+            # Backup your workflows directory
+            mkdir -p /tmp/workflows-backup
+            cp -r .github/workflows /tmp/workflows-backup/ || true
+
+            # Hard reset to upstream branch
+            git reset --hard "upstream/$branch"
+
+            # REMOVE upstream workflow files
+            rm -rf .github/workflows/*
+
+            # Restore your workflows directory
+            mkdir -p .github/workflows
+            cp -r /tmp/workflows-backup/workflows/* .github/workflows/ || true
+
+            # Stage restored workflows + removal of upstream workflows
+            git add .github/workflows
+            git add -u .github/workflows
+
+            # Commit only if workflows changed
+            if ! git diff --cached --quiet; then
+              git commit -m "Preserve .github/workflows directory during sync [skip ci]"
+            fi
+
+            # Force push to your fork
+            git push origin "$branch" --force
+          done
